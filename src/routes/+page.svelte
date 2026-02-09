@@ -23,6 +23,7 @@
 	let currentFrame = $derived(Math.round(currentTime / frameDuration));
 	let isDragging = $state(false);
 	let scrubberTrack = $state<HTMLDivElement | null>(null);
+	let scrubTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	// Markers
 	let startMark = $state<number | null>(null);
@@ -138,7 +139,15 @@
 		const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
 		const ratio = x / rect.width;
 		const frame = Math.round(ratio * totalFrames);
-		seekToFrame(frame);
+		
+		// Clear pending timeout
+		if (scrubTimeout) clearTimeout(scrubTimeout);
+		
+		// Debounce seek to 16ms (~60fps)
+		scrubTimeout = setTimeout(() => {
+			seekToFrame(frame);
+			scrubTimeout = null;
+		}, 16);
 	}
 
 	function onScrubStart(e: MouseEvent) {
@@ -153,6 +162,11 @@
 
 	function onScrubEnd() {
 		isDragging = false;
+		// Flush any pending scrub
+		if (scrubTimeout) {
+			clearTimeout(scrubTimeout);
+			scrubTimeout = null;
+		}
 	}
 
 	function onTouchScrubStart(e: TouchEvent) {
@@ -168,6 +182,11 @@
 
 	function onTouchScrubEnd() {
 		isDragging = false;
+		// Flush any pending scrub
+		if (scrubTimeout) {
+			clearTimeout(scrubTimeout);
+			scrubTimeout = null;
+		}
 	}
 
 	function setStartMark() {
@@ -232,6 +251,7 @@
 		return () => {
 			window.removeEventListener('mousemove', handleMouseMove);
 			window.removeEventListener('mouseup', handleMouseUp);
+			if (scrubTimeout) clearTimeout(scrubTimeout);
 			stream?.getTracks().forEach((t) => t.stop());
 			if (recordedUrl) URL.revokeObjectURL(recordedUrl);
 		};
