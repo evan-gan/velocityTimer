@@ -17,6 +17,7 @@
   // Review
   let reviewVideoEl = $state<HTMLVideoElement | null>(null);
   let recordedUrl = $state("");
+  let videoFileInput = $state<HTMLInputElement | null>(null);
   let duration = $state(0);
   let currentTime = $state(0);
   let fps = $state(30);
@@ -234,6 +235,36 @@
     }
   }
 
+  function openVideoUpload() {
+    if (videoFileInput) {
+      videoFileInput.click();
+    }
+  }
+
+  function onVideoFileSelected(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    // Verify it's a video file
+    if (!file.type.startsWith("video/")) {
+      alert("Please select a video file");
+      return;
+    }
+
+    // Create object URL from the uploaded file
+    if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+    recordedUrl = URL.createObjectURL(file);
+
+    // Reset marks and move to review phase
+    startMark = null;
+    endMark = null;
+    phase = "review";
+
+    // Clear the input so the same file can be selected again if desired
+    input.value = "";
+  }
+
   function onReviewVideoLoaded() {
     if (!reviewVideoEl) return;
     duration = reviewVideoEl.duration;
@@ -413,9 +444,14 @@
       </div>
       <div class="record-controls">
         {#if !isRecording}
-          <button class="btn btn-record" onclick={startRecording}>
-            ⬤ START RECORDING
-          </button>
+          <div class="record-buttons">
+            <button class="btn btn-record" onclick={startRecording}>
+              ⬤ START RECORDING
+            </button>
+            <button class="btn btn-upload" onclick={openVideoUpload}>
+              ↑ UPLOAD VIDEO
+            </button>
+          </div>
         {:else}
           <div class="recording-buttons">
             <button
@@ -444,6 +480,15 @@
           </div>
         {/if}
       </div>
+
+      <!-- Hidden video file input -->
+      <input
+        bind:this={videoFileInput}
+        type="file"
+        accept="video/*"
+        onchange={onVideoFileSelected}
+        style="display: none"
+      />
     </section>
   {:else}
     <section class="review-section">
@@ -709,6 +754,16 @@
     justify-content: center;
   }
 
+  .record-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    justify-content: center;
+    align-items: stretch;
+    width: 100%;
+    max-width: 300px;
+  }
+
   .recording-buttons {
   	display: flex;
   	flex-direction: column;
@@ -746,6 +801,12 @@
     background: rgba(255, 208, 116, 1);
     font-size: 1.1rem;
     padding: 14px 32px;
+  }
+
+  .btn-upload {
+    background: rgba(176, 135, 255, 1);
+    font-size: 1rem;
+    padding: 12px 28px;
   }
 
   .btn-stop {
