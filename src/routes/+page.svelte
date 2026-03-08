@@ -20,6 +20,9 @@
   let duration = $state(0);
   let currentTime = $state(0);
   let fps = $state(30);
+  let fpsRead = $state(false);
+  let measuringFps = $state(false);
+  let _measureStop = false;
   let frameDuration = $derived(1 / fps);
   let totalFrames = $derived(Math.floor(duration / frameDuration));
   let currentFrame = $derived(Math.round(currentTime / frameDuration));
@@ -100,9 +103,79 @@
       if (videoEl) {
         videoEl.srcObject = stream;
       }
+      // Try to read reported frameRate from the camera track settings
+      const [track] = stream.getVideoTracks();
+      if (track) {
+        const settings = track.getSettings();
+        if (
+          settings &&
+          typeof settings.frameRate === "number" &&
+          isFinite(settings.frameRate)
+        ) {
+          fps = Math.round(settings.frameRate);
+          fpsRead = true;
+        } else {
+          // If not reported, start a short measurement from playback as a fallback
+          startMeasureFpsFromPlayback();
+        }
+      } else {
+        startMeasureFpsFromPlayback();
+      }
     } catch {
       alert("Could not access camera. Please grant permission.");
     }
+  }
+
+  function startMeasureFpsFromPlayback() {
+    if (!videoEl) return;
+    // Don't start if already measuring or already read
+    if (measuringFps || fpsRead) return;
+    if (typeof (videoEl as any).requestVideoFrameCallback !== "function") return;
+
+    measuringFps = true;
+    _measureStop = false;
+
+    let last = -1;
+    let frames = 0;
+    let acc = 0; // seconds
+
+    const cb = (now: number) => {
+      if (_measureStop) {
+        measuringFps = false;
+        return;
+      }
+      if (last !== -1) {
+        const dt = (now - last) / 1000;
+        if (dt > 0) {
+          acc += dt;
+          frames++;
+        }
+      }
+      last = now;
+
+      if (acc >= 0.5 || frames >= 30) {
+        const est = frames / (acc || 1);
+        if (isFinite(est) && est > 0) {
+          fps = Math.max(1, Math.round(est));
+          fpsRead = true;
+        }
+        measuringFps = false;
+        return;
+      }
+
+      (videoEl as any).requestVideoFrameCallback(cb);
+    };
+
+    try {
+      (videoEl as any).requestVideoFrameCallback(cb);
+    } catch {
+      measuringFps = false;
+    }
+  }
+
+  function stopMeasureFps() {
+    _measureStop = true;
+    measuringFps = false;
   }
 
   function toggleRecordingMark() {
@@ -286,6 +359,8 @@
     endMark = null;
     distance = "";
     phase = "record";
+    stopMeasureFps();
+    // restart camera and measurement
     startCamera();
   }
 
@@ -307,6 +382,7 @@
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
       if (scrubTimeout) clearTimeout(scrubTimeout);
+      stopMeasureFps();
       stream?.getTracks().forEach((t) => t.stop());
       if (recordedUrl) URL.revokeObjectURL(recordedUrl);
     };
@@ -317,6 +393,10 @@
   <header>
     <h1>SHOT VELOCITY TIMER</h1>
   </header>
+
+  {#if fpsRead}
+    <div class="fps-badge">FPS: {fps}</div>
+  {/if}
 
   <div class="top-bar">
     <h1>Shot Velocity Timer</h1>
@@ -973,5 +1053,19 @@
     font-size: 1.2rem;
     margin: 0;
     flex: 1;
+  }
+
+  .fps-badge {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.9rem;
+    padding: 6px 10px;
+    border: 2px solid #000;
+    box-shadow: 2px 2px 0px #000;
+    z-index: 9999;
   }
 </style>
